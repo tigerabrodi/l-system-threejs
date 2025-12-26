@@ -1,76 +1,169 @@
-import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
-import { useRef } from 'react'
-import type { Mesh } from 'three'
-
 /**
- * A simple spinning cube component to verify Three.js is working.
- * This will be replaced with the actual tree viewer once we build it.
+ * Procedural Tree Generator - Main Application
+ *
+ * A browser-based tool for generating realistic 3D procedural trees
+ * using L-systems. Features real-time parameter tweaking, wind animation,
+ * and export to GLTF/GLB formats.
  */
-function SpinningCube() {
-  const meshRef = useRef<Mesh>(null)
 
-  // Rotate the cube every frame
-  useFrame((_, delta) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.x += delta * 0.5
-      meshRef.current.rotation.y += delta * 0.7
-    }
-  })
-
-  return (
-    <mesh ref={meshRef}>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color="#8B7355" />
-    </mesh>
-  )
-}
+import { useCallback, useEffect, useState } from 'react'
+import {
+  copyConfigToClipboard,
+  downloadTreeAsGLB,
+  downloadTreeAsGLTF,
+} from './export/gltfExport'
+import { useDebouncedValue } from './hooks/useDebouncedValue'
+import { useTreeGenerator } from './hooks/useTreeGenerator'
+import { SceneSetup } from './scene/SceneSetup'
+import { ControlPanel } from './ui/ControlPanel'
 
 /**
  * Root application component.
- * Sets up the Three.js canvas with basic lighting and controls.
+ * Manages the tree generator state and renders the UI + 3D viewport.
  */
 function App() {
+  // Tree generation hook
+  const {
+    tree,
+    stats,
+    params,
+    setParam,
+    regenerate,
+    randomizeSeed,
+    presetNames,
+    isGenerating,
+  } = useTreeGenerator()
+
+  // View state
+  const [wireframe, setWireframe] = useState(false)
+  const [windStrength, setWindStrength] = useState(0.3)
+
+  // Debounce expensive parameters to avoid regenerating on every slider tick
+  const debouncedIterations = useDebouncedValue({
+    value: params.iterations,
+    delay: 300,
+  })
+  const debouncedVariability = useDebouncedValue({
+    value: params.variability,
+    delay: 300,
+  })
+  const debouncedBaseLength = useDebouncedValue({
+    value: params.baseLength,
+    delay: 300,
+  })
+  const debouncedBaseRadius = useDebouncedValue({
+    value: params.baseRadius,
+    delay: 300,
+  })
+  const debouncedBranchAngle = useDebouncedValue({
+    value: params.branchAngle,
+    delay: 300,
+  })
+  const debouncedLeafSize = useDebouncedValue({
+    value: params.leafSize,
+    delay: 300,
+  })
+
+  // Regenerate tree when debounced params change
+  useEffect(() => {
+    regenerate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    debouncedIterations,
+    debouncedVariability,
+    debouncedBaseLength,
+    debouncedBaseRadius,
+    debouncedBranchAngle,
+    debouncedLeafSize,
+    params.seed,
+    params.preset,
+    params.leafDensity,
+    params.leafColor,
+    params.lengthFalloff,
+    params.radiusFalloff,
+  ])
+
+  // Generate initial tree on mount
+  useEffect(() => {
+    regenerate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Parameter change handler
+  const handleParamChange = useCallback(
+    <K extends keyof typeof params>(key: K, value: (typeof params)[K]) => {
+      setParam({ key, value })
+    },
+    [setParam]
+  )
+
+  // Export handlers
+  const handleExportGLB = useCallback(async () => {
+    if (tree?.group) {
+      await downloadTreeAsGLB({ treeGroup: tree.group })
+    }
+  }, [tree])
+
+  const handleExportGLTF = useCallback(async () => {
+    if (tree?.group) {
+      await downloadTreeAsGLTF({ treeGroup: tree.group })
+    }
+  }, [tree])
+
+  const handleCopyConfig = useCallback(async () => {
+    await copyConfigToClipboard({ config: params as unknown as Record<string, unknown> })
+  }, [params])
+
   return (
-    <div className="w-screen h-screen bg-stone-100">
-      <Canvas
-        camera={{
-          position: [3, 3, 3],
-          fov: 50,
-          near: 0.1,
-          far: 1000,
-        }}
-        gl={{ antialias: true }}
-      >
-        {/* Warm ambient lighting for that cozy feel */}
-        <ambientLight intensity={0.4} color="#FFF8E7" />
+    <div className="w-screen h-screen flex bg-stone-100">
+      {/* Control Panel - Left Sidebar */}
+      <ControlPanel
+        params={params}
+        presetNames={presetNames}
+        stats={stats}
+        onParamChange={handleParamChange}
+        onRegenerate={regenerate}
+        onRandomizeSeed={randomizeSeed}
+        onExportGLB={handleExportGLB}
+        onExportGLTF={handleExportGLTF}
+        onCopyConfig={handleCopyConfig}
+        wireframe={wireframe}
+        onWireframeChange={setWireframe}
+      />
 
-        {/* Main directional light - simulates late afternoon sun */}
-        <directionalLight
-          position={[5, 8, 5]}
-          intensity={1.2}
-          color="#FFFAF0"
-          castShadow
+      {/* 3D Viewport - Main Area */}
+      <main className="flex-1 relative">
+        <SceneSetup
+          tree={tree}
+          windStrength={windStrength}
+          wireframe={wireframe}
         />
 
-        {/* Fill light from below to soften shadows */}
-        <hemisphereLight
-          color="#87CEEB"
-          groundColor="#8B7355"
-          intensity={0.3}
-        />
+        {/* Loading overlay */}
+        {isGenerating && (
+          <div className="absolute inset-0 bg-stone-900/20 flex items-center justify-center">
+            <div className="bg-white rounded-lg px-4 py-2 shadow-lg text-stone-700">
+              Generating...
+            </div>
+          </div>
+        )}
 
-        {/* The spinning cube - proof Three.js is working */}
-        <SpinningCube />
-
-        {/* Orbit controls for camera manipulation */}
-        <OrbitControls
-          enableDamping
-          dampingFactor={0.1}
-          minDistance={1}
-          maxDistance={50}
-        />
-      </Canvas>
+        {/* Wind control - bottom right */}
+        <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-md">
+          <label className="flex items-center gap-2 text-sm text-stone-600">
+            <span>Wind</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={windStrength}
+              onChange={(e) => setWindStrength(parseFloat(e.target.value))}
+              className="w-20 accent-amber-600"
+            />
+          </label>
+        </div>
+      </main>
     </div>
   )
 }
