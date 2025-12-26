@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import barkTextureUrl from '../assets/bark-texture-pbr.png'
 
 /**
  * Configuration for bark material
@@ -34,8 +35,8 @@ export interface LeafMaterialConfig {
  */
 export function defaultBarkMaterialConfig(): BarkMaterialConfig {
   return {
-    // Path to the bark PBR texture asset
-    texturePath: 'src/assets/bark-texture-pbr.png',
+    // Imported bark texture URL (Vite handles the asset bundling)
+    texturePath: barkTextureUrl,
     // High roughness for realistic bark (0.9 = very rough, matte surface)
     roughness: 0.9,
     // Texture repeat values for UV mapping (horizontal, vertical)
@@ -49,8 +50,9 @@ export function defaultBarkMaterialConfig(): BarkMaterialConfig {
  */
 export function defaultLeafMaterialConfig(): LeafMaterialConfig {
   return {
-    // Forest green color for natural leaf appearance
-    color: '#228B22',
+    // White base color - instance colors will provide the actual leaf color
+    // (with vertexColors: true, final color = material.color × instance color)
+    color: '#FFFFFF',
     // Moderate roughness for slightly glossy leaves
     roughness: 0.6,
     // No metalness for organic material
